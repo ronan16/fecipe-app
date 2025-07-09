@@ -13,9 +13,11 @@ import { auth, firestore } from "../../services/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, signOut } from "firebase/auth";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { ProfileStackParamList } from "./ResetPasswordScreen";
 import type { EvaluatorStackParamList } from "../../navigation/EvaluatorStack";
+import Toast from "react-native-toast-message";
 
-type Props = NativeStackScreenProps<EvaluatorStackParamList, "Profile">;
+type Props = NativeStackScreenProps<ProfileStackParamList, "Profile">;
 
 export default function ProfileScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -35,7 +37,10 @@ export default function ProfileScreen({ navigation }: Props) {
 
   const handleUpdate = async () => {
     if (!name.trim()) {
-      Alert.alert("Nome não pode ficar em branco");
+      Toast.show({
+        type: "error",
+        text1: "Nome não pode ficar em branco",
+      });
       return;
     }
     setLoading(true);
@@ -43,20 +48,19 @@ export default function ProfileScreen({ navigation }: Props) {
       await updateDoc(doc(firestore, "users", user!.email!), {
         name: name.trim(),
       });
-      Alert.alert("Atualizado", "Nome alterado com sucesso");
+      Toast.show({
+        type: "success",
+        text1: "Atualizado",
+        text2: "Nome alterado com sucesso",
+      });
     } catch (err: any) {
-      Alert.alert("Erro", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleResetPwd = async () => {
-    try {
-      await sendPasswordResetEmail(auth, user!.email!);
-      Alert.alert("Enviado", "Link para redefinir senha enviado ao seu email");
-    } catch (err: any) {
-      Alert.alert("Erro", err.message);
     }
   };
 
@@ -81,8 +85,10 @@ export default function ProfileScreen({ navigation }: Props) {
       <Button title="Salvar Nome" onPress={handleUpdate} />
 
       <View style={styles.spacer} />
-      <Button title="Redefinir Senha" onPress={handleResetPwd} />
-
+      <Button
+        title="Redefinir Senha"
+        onPress={() => navigation.navigate("ResetPassword")}
+      />
       <View style={styles.spacer} />
       <Button title="Sair" onPress={handleSignOut} color="red" />
     </View>

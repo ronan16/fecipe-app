@@ -1,5 +1,4 @@
-// src/screens/WorkListScreen.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,24 +6,15 @@ import {
   FlatList,
   Button,
   ActivityIndicator,
-  Alert,
   StyleSheet,
 } from "react-native";
-import { Picker } from "@react-native-picker/picker";
+import Toast from "react-native-toast-message";
 import { firestore } from "../services/firebase";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  QueryDocumentSnapshot,
-} from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { useAuth } from "../contexts/AuthContext";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { EvaluatorStackParamList } from "../navigation/EvaluatorStack";
-
-type Props = {
-  navigation: NativeStackNavigationProp<EvaluatorStackParamList, "Works">;
-};
+import type { EvaluatorStackParamList } from "../navigation/EvaluatorDrawer";
 
 interface Project {
   id: string;
@@ -36,74 +26,81 @@ interface Project {
   categoria: string;
 }
 
+type Props = {
+  navigation: NativeStackNavigationProp<EvaluatorStackParamList, "Works">;
+};
+
 export default function WorkListScreen({ navigation }: Props) {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { user } = useAuth();
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [filtered, setFiltered] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [searchTitle, setSearchTitle] = useState<string>("");
+  const [searchStudent, setSearchStudent] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
 
-  const [searchTitle, setSearchTitle] = useState("");
-  const [searchStudent, setSearchStudent] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  // 1) função de carga que filtra projetos já avaliados
+  const loadProjects = useCallback(async () => {
+    setLoading(true);
+    try {
+      // carrega todos os trabalhos
+      const projSnap = await getDocs(collection(firestore, "trabalhos"));
+      const projects = projSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      })) as Project[];
 
-  // Carrega projetos uma vez
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(collection(firestore, "trabalhos"));
-        const list = snap.docs.map(
-          (d: QueryDocumentSnapshot) =>
-            ({
-              id: d.id,
-              ...(d.data() as any),
-            } as Project)
-        );
-        setProjects(list);
-        setFiltered(list);
-      } catch (err: any) {
-        Alert.alert("Erro", err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+      // carrega avaliações já feitas por este usuário
+      const evalSnap = await getDocs(
+        query(
+          collection(firestore, "avaliacoes"),
+          where("avaliadorId", "==", user!.uid)
+        )
+      );
+      const done = new Set(evalSnap.docs.map((d) => d.data().trabalhoId));
 
-  // Aplica filtros em memória
-  useEffect(() => {
+      // só deixa os que ainda não foram avaliados
+      const remaining = projects.filter((p) => !done.has(p.id));
+
+      setAllProjects(remaining);
+      setFiltered(remaining);
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Erro ao carregar projetos",
+        text2: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  // 2) dispara loadProjects sempre que a tela ficar em foco
+  useFocusEffect(
+    useCallback(() => {
+      // chama sua função async, mas o callback em si é síncrono
+      loadProjects();
+      // não retorna Promise nem cleanup
+    }, [loadProjects])
+  );
+
+  // 3) aplica filtros em memória
+  React.useEffect(() => {
     setFiltered(
-      projects.filter((p) => {
-        const matchTitle = p.titulo
+      allProjects.filter((p) => {
+        const byTitle = p.titulo
           .toLowerCase()
           .includes(searchTitle.toLowerCase());
-        const matchStudent = searchStudent
+        const byStudent = searchStudent
           ? p.alunos.some((a) =>
               a.toLowerCase().includes(searchStudent.toLowerCase())
             )
           : true;
-        const matchCategory = categoryFilter
-          ? p.categoria === categoryFilter
-          : true;
-        return matchTitle && matchStudent && matchCategory;
+        const byCat = categoryFilter ? p.categoria === categoryFilter : true;
+        return byTitle && byStudent && byCat;
       })
     );
-  }, [searchTitle, searchStudent, categoryFilter, projects]);
-
-  // Verifica limite de 3 avaliações antes de navegar
-  const handleEvaluate = async (project: Project) => {
-    const evalSnap = await getDocs(
-      query(
-        collection(firestore, "avaliacoes"),
-        where("trabalhoId", "==", project.id)
-      )
-    );
-    if (evalSnap.size >= 3) {
-      Alert.alert("Limite atingido", "Este trabalho já recebeu 3 avaliações.");
-      return;
-    }
-    navigation.navigate("Evaluate", {
-      trabalhoId: project.id,
-      titulo: project.titulo,
-    });
-  };
+  }, [searchTitle, searchStudent, categoryFilter, allProjects]);
 
   if (loading) {
     return <ActivityIndicator style={{ flex: 1 }} size="large" />;
@@ -123,35 +120,37 @@ export default function WorkListScreen({ navigation }: Props) {
         onChangeText={setSearchStudent}
         style={styles.input}
       />
-      <Picker
-        selectedValue={categoryFilter}
-        onValueChange={setCategoryFilter}
-        style={styles.picker}
-      >
-        <Picker.Item label="Todas categorias" value="" />
-        <Picker.Item label="Ensino" value="Ensino" />
-        <Picker.Item label="Pesquisa/Inovação" value="Pesquisa/Inovação" />
-        <Picker.Item label="Extensão" value="Extensão" />
-        <Picker.Item label="Comunicação Oral" value="Comunicação Oral" />
-        <Picker.Item label="IFTECH" value="IFTECH" />
-        <Picker.Item label="Robótica" value="Robótica" />
-      </Picker>
+      <TextInput
+        placeholder="Buscar por categoria"
+        value={categoryFilter}
+        onChangeText={setCategoryFilter}
+        style={styles.input}
+      />
 
       {filtered.length === 0 ? (
         <View style={styles.centered}>
-          <Text>Nenhum trabalho encontrado.</Text>
+          <Text>Nenhum trabalho disponível.</Text>
         </View>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <View style={styles.card}>
               <Text style={styles.title}>{item.titulo}</Text>
               <Text style={styles.subtitle}>
                 {item.categoria} | {item.alunos.join(", ")}
               </Text>
-              <Button title="Avaliar" onPress={() => handleEvaluate(item)} />
+              <Button
+                title="Avaliar"
+                onPress={() =>
+                  navigation.navigate("Evaluate", {
+                    trabalhoId: item.id,
+                    titulo: item.titulo,
+                  })
+                }
+              />
             </View>
           )}
         />
@@ -168,7 +167,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 8,
   },
-  picker: { marginBottom: 12 },
+  list: { paddingBottom: 16 },
   card: {
     marginBottom: 12,
     padding: 12,
@@ -176,7 +175,7 @@ const styles = StyleSheet.create({
     borderColor: "#ddd",
     borderRadius: 6,
   },
-  title: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
+  title: { fontSize: 16, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginBottom: 8 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
 });

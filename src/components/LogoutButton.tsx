@@ -3,6 +3,7 @@
 import React from "react";
 import { Button, Alert } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
+import Toast from "react-native-toast-message";
 
 export default function LogoutButton() {
   const { signOutUser } = useAuth();
@@ -11,7 +12,11 @@ export default function LogoutButton() {
     try {
       await signOutUser();
     } catch (err: any) {
-      Alert.alert("Erro ao sair", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro",
+        text2: err.message,
+      });
     }
   };
 

@@ -24,6 +24,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AdminParamList, Evaluator } from "../../navigation/AdminStack";
+import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AdminParamList, "EvaluatorForm">;
 
@@ -90,10 +91,14 @@ export default function EvaluatorForm({ route, navigation }: Props) {
         // Se quiser enviar link de reset de senha
         if (data.password.trim()) {
           await sendPasswordResetEmail(auth, data.email);
-          Alert.alert(
-            "Senha",
-            "Link de redefinição de senha enviado ao email do avaliador."
-          );
+
+          // depois de salvar a avaliação
+          Toast.show({
+            type: "success",
+            text1: "Senha",
+            text2:
+              "Link de redefinição de senha enviado ao email do avaliador.",
+          });
         }
       } else {
         // Criação de usuário e doc no Firestore
@@ -109,7 +114,11 @@ export default function EvaluatorForm({ route, navigation }: Props) {
       }
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert("Erro", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
     }

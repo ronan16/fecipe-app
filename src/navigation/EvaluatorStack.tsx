@@ -8,8 +8,8 @@ import EvaluationScreen from "../screens/EvaluationScreen";
 import ProfileScreen from "../screens/evaluator/ProfileScreen";
 
 export type EvaluatorStackParamList = {
-  Works: undefined; // <--- rota para WorkListScreen
-  Evaluate: { trabalhoId: string; titulo: string };
+  Works: undefined;
+  Evaluate: { trabalhoId: string; titulo: string; evaluationId?: string };
   Profile: undefined;
 };
 

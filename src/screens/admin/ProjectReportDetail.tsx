@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AdminParamList, Project } from "../../navigation/AdminStack";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
+import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AdminParamList, "ProjectReportDetail">;
 
@@ -84,7 +85,11 @@ export default function ProjectReportDetail({ route }: Props) {
           setFinalScore(0);
         }
       } catch (err: any) {
-        Alert.alert("Erro ao carregar relatório", err.message);
+        Toast.show({
+          type: "error",
+          text1: "Erro ao carregar relatório",
+          text2: err.message,
+        });
       } finally {
         setLoading(false);
       }

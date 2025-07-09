@@ -23,6 +23,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AdminParamList } from "../../navigation/AdminStack";
+import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AdminParamList, "ProjectForm">;
 
@@ -121,7 +122,11 @@ export default function ProjectForm({ navigation, route }: Props) {
       }
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert("Erro ao salvar projeto", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro ao salvar projeto",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
     }

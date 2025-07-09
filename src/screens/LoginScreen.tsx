@@ -14,6 +14,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 // 1) Importe o AuthStackParamList, que define apenas Login
 import { AuthStackParamList } from "../navigation/AuthStack";
+import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
@@ -24,7 +25,10 @@ export default function LoginScreen({ navigation }: Props) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Preencha email e senha");
+      Toast.show({
+        type: "error",
+        text1: "Preencha email e senha",
+      });
       return;
     }
     setLoading(true);
@@ -32,8 +36,12 @@ export default function LoginScreen({ navigation }: Props) {
       await signInWithEmailAndPassword(auth, email, password);
       // não precisa chamar navigation.replace(), o RootNavigator
       // vai detectar o auth state e trocar para Admin/Evaluator
-    } catch (error: any) {
-      Alert.alert("Erro ao entrar", error.message);
+    } catch (err: any) {
+      Toast.show({
+        type: "error",
+        text1: "Erro ao entrar",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
     }

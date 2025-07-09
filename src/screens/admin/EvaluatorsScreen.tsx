@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
 import type { AdminParamList } from "../../navigation/AdminStack";
+import Toast from "react-native-toast-message";
 
 type Props = {
   navigation: NativeStackNavigationProp<AdminParamList, "Evaluators">;
@@ -45,7 +46,11 @@ export default function EvaluatorsScreen({ navigation }: Props) {
       });
       setEvals(list);
     } catch (err: any) {
-      Alert.alert("Erro ao carregar avaliadores", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro ao carregar avaliadores",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -71,8 +76,17 @@ export default function EvaluatorsScreen({ navigation }: Props) {
             try {
               await deleteDoc(doc(firestore, "users", id));
               await loadEvals();
-            } catch (err: any) {
-              Alert.alert("Erro ao excluir avaliador", err.message);
+              Toast.show({
+                type: "success",
+                text1: "Sucesso",
+                text2: "Avaliador excluído com sucesso",
+              });
+            } catch (error: any) {
+              Toast.show({
+                type: "error",
+                text1: "Erro ao excluir avaliador",
+                text2: error.message,
+              });
             } finally {
               setLoading(false);
             }

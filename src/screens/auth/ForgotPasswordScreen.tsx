@@ -11,6 +11,7 @@ import { auth } from "../../services/firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "../../navigation/AuthStack";
+import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "ForgotPassword">;
 
@@ -20,7 +21,10 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
   const handleReset = async () => {
     if (!email.trim()) {
-      Alert.alert("Digite seu email");
+      Toast.show({
+        type: "error",
+        text1: "Digite seu email",
+      });
       return;
     }
     setLoading(true);
@@ -32,7 +36,11 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       );
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert("Erro", err.message);
+      Toast.show({
+        type: "error",
+        text1: "Erro",
+        text2: err.message,
+      });
     } finally {
       setLoading(false);
     }
