@@ -1,5 +1,3 @@
-// src/screens/admin/ProjectsScreen.tsx
-
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
@@ -9,44 +7,71 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import Toast from "react-native-toast-message";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
-// importe o tipo Project
-import type { AdminParamList, Project } from "../../navigation/AdminStack";
+import type { ProjectsStackParamList } from "../../navigation/AdminDrawer";
 
 type Props = {
-  navigation: NativeStackNavigationProp<AdminParamList, "Projects">;
+  navigation: NativeStackNavigationProp<ProjectsStackParamList, "ProjectsList">;
 };
 
+interface Project {
+  id: string;
+  titulo: string;
+  alunos: string[];
+  orientador: string;
+  turma: string;
+  anoSemestre: string;
+  categoria: string;
+}
+
 export default function ProjectsScreen({ navigation }: Props) {
-  // use o tipo Project
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
       const snap = await getDocs(collection(firestore, "trabalhos"));
-      // agora mapeamos *todos* os campos, e damos cast para Project
-      const list: Project[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Project, "id">),
-      }));
-      setProjects(list);
-    } catch (err: any) {
-      console.error("Erro ao carregar projetos:", err);
+      setProjects(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Erro ao carregar projetos",
+        text2: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      // chama sua função async, mas o callback em si é síncrono
+      loadProjects();
+      // não retorna Promise nem cleanup
+    }, [loadProjects])
+  );
+
+  const handleDelete = async (id: string) => {
+    setLoading(true);
+    try {
+      await deleteDoc(doc(firestore, "trabalhos", id));
+      await loadProjects();
+      Toast.show({ type: "success", text1: "Projeto excluído com sucesso" });
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Erro ao excluir projeto",
+        text2: error.message,
+      });
     } finally {
       setLoading(false);
     }
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadProjects();
-    }, [])
-  );
 
   if (loading) {
     return (
@@ -58,51 +83,53 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <Button
-        title="Novo Projeto"
-        onPress={() => navigation.navigate("ProjectForm", {})}
-      />
-
-      {projects.length === 0 ? (
-        <View style={styles.centered}>
-          <Text>Nenhum projeto encontrado.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={projects}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.title}>{item.titulo}</Text>
-              <View style={styles.actions}>
-                <Button
-                  title="Editar"
-                  onPress={() =>
-                    // agora `item` é um Project completo
-                    navigation.navigate("ProjectForm", { project: item })
-                  }
-                />
-                <View style={styles.actionSpacing} />
-                <Button
-                  title="Excluir"
-                  color="red"
-                  onPress={async () => {
-                    await deleteDoc(doc(firestore, "trabalhos", item.id));
-                    loadProjects();
-                  }}
-                />
-              </View>
-            </View>
-          )}
+      {/* Linha com botões de ação */}
+      <View style={styles.buttonRow}>
+        <Button
+          title="Novo Projeto"
+          onPress={() => navigation.navigate("ProjectForm", {})}
         />
-      )}
+        <Button
+          title="Importar em Lote"
+          onPress={() => navigation.navigate("BulkUpload", undefined)}
+        />
+      </View>
+
+      <FlatList
+        data={projects}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.title}>{item.titulo}</Text>
+            <View style={styles.actions}>
+              <Button
+                title="Editar"
+                onPress={() =>
+                  navigation.navigate("ProjectForm", { project: item })
+                }
+              />
+              <View style={styles.actionSpacing} />
+              <Button
+                title="Excluir"
+                color="red"
+                onPress={() => handleDelete(item.id)}
+              />
+            </View>
+          </View>
+        )}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   list: { paddingBottom: 16 },
   card: {
     marginBottom: 12,

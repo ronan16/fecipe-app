@@ -22,6 +22,8 @@ import { useAuth } from "../contexts/AuthContext";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { EvaluatorStackParamList } from "../navigation/EvaluatorDrawer";
 
+type Props = NativeStackScreenProps<EvaluatorStackParamList, "Evaluate">;
+
 // Definições de critérios por categoria
 const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
   Ensino: [
@@ -235,19 +237,23 @@ export default function EvaluationScreen({ route, navigation }: Props) {
         notasObj[`C${i + 1}`] = n!;
       });
 
+      const evalRef = evaluationId
+        ? doc(firestore, "avaliacoes", evaluationId)
+        : collection(firestore, "avaliacoes");
+
+      const payload = {
+        trabalhoId,
+        avaliadorId: user!.uid,
+        evaluatorEmail: user!.email, // ← novo campo com o e-mail
+        notas: notasObj,
+        comentarios,
+        timestamp: serverTimestamp(),
+      };
+
       if (evaluationId) {
-        await updateDoc(doc(firestore, "avaliacoes", evaluationId), {
-          notas: notasObj,
-          comentarios,
-        });
+        await updateDoc(evalRef as any, payload);
       } else {
-        await addDoc(collection(firestore, "avaliacoes"), {
-          trabalhoId,
-          avaliadorId: user!.uid,
-          notas: notasObj,
-          comentarios,
-          timestamp: serverTimestamp(),
-        });
+        await addDoc(evalRef as any, payload);
       }
       Toast.show({ type: "success", text1: "Avaliação salva com sucesso" });
       navigation.goBack();
