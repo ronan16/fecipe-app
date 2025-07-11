@@ -1,34 +1,26 @@
+// src/screens/evaluator/ResetPasswordScreen.tsx
+
 import React, { useState } from "react";
+import { View, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import {
-  View,
-  Text,
+  Card,
   TextInput,
   Button,
-  Alert,
+  Title,
+  Paragraph,
   ActivityIndicator,
-  StyleSheet,
-} from "react-native";
+} from "react-native-paper";
+import Toast from "react-native-toast-message";
 import {
   getAuth,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
 } from "firebase/auth";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import Toast from "react-native-toast-message";
 
-// Tipagem do stack de perfil
-export type ProfileStackParamList = {
-  Profile: undefined;
-  ResetPassword: undefined;
-};
-
-type Props = NativeStackScreenProps<ProfileStackParamList, "ResetPassword">;
-
-export default function ResetPasswordScreen({ navigation }: Props) {
+export default function ResetPasswordScreen() {
   const auth = getAuth();
   const user = auth.currentUser!;
-
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -36,36 +28,25 @@ export default function ResetPasswordScreen({ navigation }: Props) {
 
   const handleReset = async () => {
     if (!currentPw || !newPw || !confirmPw) {
-      Toast.show({
-        type: "error",
-        text1: "Preencha todos os campos",
-      });
+      Toast.show({ type: "error", text1: "Preencha todos os campos" });
       return;
     }
     if (newPw !== confirmPw) {
       Toast.show({
         type: "error",
-        text1: "Erro: A nova senha e a confirmação não coincidem",
-        text2: "Por favor, verifique e tente novamente.",
+        text1: "Nova senha e confirmação não coincidem",
       });
       return;
     }
     setLoading(true);
     try {
-      // 1) Reautentica com a senha atual
       const cred = EmailAuthProvider.credential(user.email!, currentPw);
       await reauthenticateWithCredential(user, cred);
-
-      // 2) Atualiza a senha
       await updatePassword(user, newPw);
-
       Toast.show({
         type: "success",
-        text1: "Sucesso",
-        text2: "Senha alterada com sucesso!",
+        text1: "Senha alterada com sucesso!",
       });
-      // volta à tela anterior
-      navigation.goBack();
     } catch (err: any) {
       Toast.show({
         type: "error",
@@ -78,45 +59,55 @@ export default function ResetPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      {loading && <ActivityIndicator size="large" />}
-      <Text style={styles.label}>Senha Atual</Text>
-      <TextInput
-        value={currentPw}
-        onChangeText={setCurrentPw}
-        secureTextEntry
-        style={styles.input}
-      />
-      <Text style={styles.label}>Nova Senha</Text>
-      <TextInput
-        value={newPw}
-        onChangeText={setNewPw}
-        secureTextEntry
-        style={styles.input}
-      />
-      <Text style={styles.label}>Confirmar Nova Senha</Text>
-      <TextInput
-        value={confirmPw}
-        onChangeText={setConfirmPw}
-        secureTextEntry
-        style={styles.input}
-      />
-      <Button
-        title={loading ? "Aguardando..." : "Salvar Nova Senha"}
-        onPress={handleReset}
-        disabled={loading}
-      />
-    </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.select({ ios: "padding", android: undefined })}
+    >
+      <Card style={styles.card}>
+        <Card.Content>
+          <Title>Redefinir Senha</Title>
+          <Paragraph>Digite sua senha atual</Paragraph>
+          <TextInput
+            mode="outlined"
+            secureTextEntry
+            value={currentPw}
+            onChangeText={setCurrentPw}
+            style={styles.input}
+          />
+          <Paragraph>Nova senha</Paragraph>
+          <TextInput
+            mode="outlined"
+            secureTextEntry
+            value={newPw}
+            onChangeText={setNewPw}
+            style={styles.input}
+          />
+          <Paragraph>Confirme a nova senha</Paragraph>
+          <TextInput
+            mode="outlined"
+            secureTextEntry
+            value={confirmPw}
+            onChangeText={setConfirmPw}
+            style={styles.input}
+          />
+
+          <Button
+            mode="contained"
+            onPress={handleReset}
+            disabled={loading}
+            style={styles.button}
+          >
+            {loading ? <ActivityIndicator color="#fff" /> : "Salvar"}
+          </Button>
+        </Card.Content>
+      </Card>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, justifyContent: "center" },
-  label: { marginTop: 12, marginBottom: 4, fontWeight: "bold" },
-  input: {
-    borderBottomWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    marginBottom: 8,
-  },
+  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
+  card: { padding: 16, borderRadius: 8 },
+  input: { marginBottom: 12, backgroundColor: "#f5f5f5" },
+  button: { marginTop: 16 },
 });

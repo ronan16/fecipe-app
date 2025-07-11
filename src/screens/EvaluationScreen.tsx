@@ -1,13 +1,20 @@
+// src/screens/EvaluationScreen.tsx
+
 import React, { useState, useEffect } from "react";
 import {
   View,
-  Text,
   ScrollView,
-  Button,
   ActivityIndicator,
   StyleSheet,
-  TextInput,
+  Dimensions,
 } from "react-native";
+import {
+  Card,
+  Button as PaperButton,
+  TextInput,
+  Title,
+  Paragraph,
+} from "react-native-paper";
 import Toast from "react-native-toast-message";
 import {
   doc,
@@ -24,7 +31,12 @@ import type { EvaluatorStackParamList } from "../navigation/EvaluatorDrawer";
 
 type Props = NativeStackScreenProps<EvaluatorStackParamList, "Evaluate">;
 
-// Definições de critérios por categoria
+// Fórmula de padronização
+const Z = 2.5;
+// Pesos para critérios 1–9 (usados nas categorias de 9 critérios)
+const WEIGHTS = [0.9, 0.8, 0.7, 0.6, 0.6, 0.4, 0.4, 0.3, 0.3];
+
+// Critérios por categoria, conforme anexos I–VI do regulamento
 const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
   Ensino: [
     {
@@ -40,7 +52,7 @@ const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
       values: [0, 0.4, 0.7, 1.0, 1.4],
     },
     {
-      label: "Elaboração do banner (aspectos visuais, organização).",
+      label: "Elaboração do banner (aspectos visuais, diagramação, coesão).",
       values: [0, 0.3, 0.6, 0.9, 1.2],
     },
     {
@@ -72,7 +84,7 @@ const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
       values: [0, 0.4, 0.7, 1.0, 1.4],
     },
     {
-      label: "Elaboração do banner (aspectos visuais, organização).",
+      label: "Elaboração do banner (aspectos visuais, diagramação).",
       values: [0, 0.3, 0.6, 0.9, 1.2],
     },
     {
@@ -94,29 +106,77 @@ const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
     },
   ],
   Extensão: [
-    { label: "Clareza dos objetivos.", values: [0, 0.4, 0.7, 1.0, 1.4] },
-    { label: "Engajamento da comunidade.", values: [0, 0.3, 0.6, 0.9, 1.2] },
-    { label: "Relevância social.", values: [0, 0.2, 0.4, 0.6, 0.8] },
     {
-      label: "Parcerias e articulação local.",
-      values: [0, 0.3, 0.5, 0.7, 1.0],
+      label: "Domínio do estudante sobre o trabalho.",
+      values: [0, 0.4, 0.9, 1.4, 1.8],
     },
-    { label: "Sustentabilidade das ações.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Disseminação de resultados.", values: [0, 0.3, 0.6, 0.9, 1.2] },
-    { label: "Inovação e criatividade.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Responsabilidade social.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Avaliação de impacto.", values: [0, 0.2, 0.4, 0.6, 0.8] },
+    { label: "Clareza da apresentação.", values: [0, 0.4, 0.8, 1.2, 1.6] },
+    {
+      label: "Definição da proposta do projeto.",
+      values: [0, 0.4, 0.7, 1.0, 1.4],
+    },
+    {
+      label: "Elaboração do banner (aspectos visuais, diagramação).",
+      values: [0, 0.3, 0.6, 0.9, 1.2],
+    },
+    {
+      label: "Participação da comunidade externa.",
+      values: [0, 0.3, 0.6, 0.9, 1.2],
+    },
+    {
+      label: "Potencial de impacto social/político/cultural.",
+      values: [0, 0.2, 0.4, 0.6, 0.8],
+    },
+    {
+      label: "Resultados obtidos e demandas atendidas.",
+      values: [0, 0.2, 0.4, 0.6, 0.8],
+    },
+    {
+      label: "Relação entre resultados e objetivos.",
+      values: [0, 0.2, 0.3, 0.4, 0.6],
+    },
+    {
+      label: "Interdisciplinaridade do projeto.",
+      values: [0, 0.2, 0.3, 0.4, 0.6],
+    },
   ],
   "Comunicação Oral": [
-    { label: "Domínio do tema.", values: [0, 0.4, 0.8, 1.2, 1.6] },
-    { label: "Clareza da fala.", values: [0, 0.4, 0.8, 1.2, 1.6] },
-    { label: "Expressão e entonação.", values: [0, 0.3, 0.6, 0.9, 1.2] },
-    { label: "Postura e linguagem corporal.", values: [0, 0.3, 0.6, 0.9, 1.2] },
-    { label: "Uso de recursos visuais.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Tempo de apresentação.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Conexão com a plateia.", values: [0, 0.2, 0.4, 0.6, 0.8] },
-    { label: "Respostas às perguntas.", values: [0, 0.3, 0.6, 0.9, 1.2] },
-    { label: "Relevância do conteúdo.", values: [0, 0.3, 0.6, 0.9, 1.2] },
+    {
+      label: "Domínio do tema considerando fundamentação teórica.",
+      values: [0, 0.4, 0.9, 1.4, 1.8],
+    },
+    {
+      label: "Clareza e objetividade da apresentação.",
+      values: [0, 0.4, 0.8, 1.2, 1.6],
+    },
+    {
+      label: "Definição da proposta do projeto.",
+      values: [0, 0.4, 0.7, 1.0, 1.4],
+    },
+    {
+      label: "Elaboração dos slides (visuais, texto, coesão).",
+      values: [0, 0.3, 0.6, 0.9, 1.2],
+    },
+    {
+      label: "Contribuição para experiência acadêmica e profissional.",
+      values: [0, 0.3, 0.6, 0.9, 1.2],
+    },
+    {
+      label: "Domínio e desenvoltura na apresentação.",
+      values: [0, 0.2, 0.4, 0.6, 0.8],
+    },
+    {
+      label: "Relação entre resultados e objetivos.",
+      values: [0, 0.2, 0.4, 0.6, 0.8],
+    },
+    {
+      label: "Relevância e contribuição social.",
+      values: [0, 0.2, 0.3, 0.4, 0.6],
+    },
+    {
+      label: "Domínio no uso de recursos audiovisuais.",
+      values: [0, 0.2, 0.3, 0.4, 0.6],
+    },
   ],
   IFTECH: [
     {
@@ -124,7 +184,7 @@ const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
       values: [0, 0.25, 0.5, 1.0, 1.5],
     },
     {
-      label: "Protótipo visa solucionar problemas?",
+      label: "Protótipo visa solucionar problemas locais?",
       values: [0, 0.5, 1.0, 1.5, 2.0],
     },
     {
@@ -135,21 +195,30 @@ const CRITERIA_DEFS: Record<string, { label: string; values: number[] }[]> = {
       label: "Inovação e criatividade do protótipo?",
       values: [0, 0.5, 1.0, 1.5, 2.0],
     },
-    { label: "Apresentação do protótipo.", values: [0, 0.25, 0.5, 1.0, 1.5] },
     {
-      label: "Contribuição para a prática educativa.",
+      label: "Desempenho na explicação do protótipo.",
+      values: [0, 0.25, 0.5, 1.0, 1.5],
+    },
+    {
+      label: "Viabilidade técnica e aplicabilidade.",
       values: [0, 0.5, 1.0, 1.5, 2.0],
     },
   ],
   Robótica: [
-    { label: "Funcionalidade do robô.", values: [0, 0.25, 0.5, 1.0, 1.5] },
-    { label: "Estrutura e montagem.", values: [0, 0.5, 1.0, 1.5, 2.0] },
     {
-      label: "Programação e lógica aplicada.",
+      label: "Objetivos e métodos bem definidos?",
+      values: [0, 0.25, 0.5, 1.0, 1.5],
+    },
+    { label: "Funcionalidade do robô.", values: [0, 0.5, 1.0, 1.5, 2.0] },
+    {
+      label: "Sustentabilidade e responsabilidade social?",
       values: [0, 0.25, 0.5, 0.75, 1.0],
     },
     { label: "Inovação e criatividade.", values: [0, 0.5, 1.0, 1.5, 2.0] },
-    { label: "Demonstração prática.", values: [0, 0.25, 0.5, 1.0, 1.5] },
+    {
+      label: "Desempenho na demonstração prática.",
+      values: [0, 0.25, 0.5, 1.0, 1.5],
+    },
     { label: "Viabilidade técnica.", values: [0, 0.5, 1.0, 1.5, 2.0] },
   ],
 };
@@ -158,55 +227,49 @@ export default function EvaluationScreen({ route, navigation }: Props) {
   const { trabalhoId, titulo, evaluationId } = route.params;
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [criteria, setCriteria] = useState<
-    { label: string; values: number[] }[]
-  >([]);
-  const [notas, setNotas] = useState<(number | null)[]>([]);
+  const [criteria, setCriteria] = useState<(typeof CRITERIA_DEFS)["Ensino"]>(
+    []
+  );
+  const [notas, setNotas] = useState<Array<number | null>>([]);
   const [comentarios, setComentarios] = useState<string>("");
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const pSnap = await getDoc(doc(firestore, "trabalhos", trabalhoId));
-        if (!pSnap.exists()) {
+        const snap = await getDoc(doc(firestore, "trabalhos", trabalhoId));
+        if (!snap.exists()) {
           Toast.show({ type: "error", text1: "Projeto não encontrado" });
           return navigation.goBack();
         }
-        const { categoria } = pSnap.data() as any;
+        const { categoria } = snap.data() as any;
         const defs = CRITERIA_DEFS[categoria];
         if (!defs) {
-          Toast.show({
-            type: "error",
-            text1: "Categoria não suportada",
-            text2: categoria,
-          });
+          Toast.show({ type: "error", text1: "Categoria inválida" });
           return navigation.goBack();
         }
         if (!active) return;
         setCriteria(defs);
-
-        let baseNotas = Array(defs.length).fill(null as number | null);
+        // init notas base
+        const baseNotas = Array(defs.length).fill(null as number | null);
         let baseComent = "";
         if (evaluationId) {
           const eSnap = await getDoc(
             doc(firestore, "avaliacoes", evaluationId)
           );
           if (eSnap.exists()) {
-            const d = eSnap.data();
-            baseNotas = defs.map((_, i) => d.notas?.[`C${i + 1}`] ?? null);
-            baseComent = d.comentarios || "";
+            const data = eSnap.data();
+            defs.forEach((_, i) => {
+              baseNotas[i] = data.notas?.[`C${i + 1}`] ?? null;
+            });
+            baseComent = data.comentarios || "";
           }
         }
         if (!active) return;
         setNotas(baseNotas);
         setComentarios(baseComent);
-      } catch (error: any) {
-        Toast.show({
-          type: "error",
-          text1: "Erro ao carregar",
-          text2: error.message,
-        });
+      } catch (e: any) {
+        Toast.show({ type: "error", text1: "Erro", text2: e.message });
         navigation.goBack();
       } finally {
         if (active) setLoading(false);
@@ -215,101 +278,139 @@ export default function EvaluationScreen({ route, navigation }: Props) {
     return () => {
       active = false;
     };
-  }, [trabalhoId, evaluationId, navigation]);
+  }, [trabalhoId, evaluationId]);
 
-  const handlePress = (idx: number, value: number) => {
+  const handleSelect = (idx: number, value: number) => {
     const arr = [...notas];
     arr[idx] = value;
     setNotas(arr);
   };
 
   const handleSubmit = async () => {
-    if (notas.some((n) => n === null)) {
-      return Toast.show({
-        type: "error",
-        text1: "Preencha todos os critérios",
-      });
+    if (notas.some((n) => n == null)) {
+      Toast.show({ type: "error", text1: "Preencha todos os critérios" });
+      return;
     }
     setLoading(true);
     try {
       const notasObj: Record<string, number> = {};
-      notas.forEach((n, i) => {
-        notasObj[`C${i + 1}`] = n!;
-      });
-
-      const evalRef = evaluationId
-        ? doc(firestore, "avaliacoes", evaluationId)
-        : collection(firestore, "avaliacoes");
-
+      notas.forEach((n, i) => (notasObj[`C${i + 1}`] = n!));
       const payload = {
         trabalhoId,
         avaliadorId: user!.uid,
-        evaluatorEmail: user!.email, // ← novo campo com o e-mail
+        evaluatorEmail: user!.email,
         notas: notasObj,
         comentarios,
         timestamp: serverTimestamp(),
       };
-
       if (evaluationId) {
-        await updateDoc(evalRef as any, payload);
+        await updateDoc(doc(firestore, "avaliacoes", evaluationId), payload);
       } else {
-        await addDoc(evalRef as any, payload);
+        await addDoc(collection(firestore, "avaliacoes"), payload);
       }
-      Toast.show({ type: "success", text1: "Avaliação salva com sucesso" });
+      Toast.show({ type: "success", text1: "Avaliação salva!" });
       navigation.goBack();
-    } catch (error: any) {
-      Toast.show({
-        type: "error",
-        text1: "Erro ao salvar",
-        text2: error.message,
-      });
+    } catch (e: any) {
+      Toast.show({ type: "error", text1: "Erro ao salvar", text2: e.message });
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
-    return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
   }
+
+  const BUTTON_SIZE = (Dimensions.get("window").width - 48) / 5;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{titulo}</Text>
+      <Title style={styles.header}>{titulo}</Title>
+
       {criteria.map((c, idx) => (
-        <View key={idx} style={styles.field}>
-          <Text style={styles.label}>{c.label}</Text>
-          <View style={styles.buttonsRow}>
-            {c.values.map((v) => (
-              <Button
-                key={v}
-                title={v.toString()}
-                onPress={() => handlePress(idx, v)}
-                color={notas[idx] === v ? "#007AFF" : undefined}
-              />
-            ))}
-          </View>
-        </View>
+        <Card key={idx} style={styles.card} elevation={2}>
+          <Card.Content>
+            <Paragraph style={styles.criterionLabel}>{c.label}</Paragraph>
+            <View style={styles.buttonsRow}>
+              {c.values.map((v) => {
+                const sel = notas[idx] === v;
+                return (
+                  <PaperButton
+                    key={v}
+                    mode={sel ? "contained" : "outlined"}
+                    onPress={() => handleSelect(idx, v)}
+                    style={[
+                      styles.noteButton,
+                      { width: BUTTON_SIZE },
+                      sel && styles.noteButtonSelected,
+                    ]}
+                    labelStyle={
+                      sel ? styles.noteLabelSelected : styles.noteLabel
+                    }
+                  >
+                    {v.toFixed(1)}
+                  </PaperButton>
+                );
+              })}
+            </View>
+          </Card.Content>
+        </Card>
       ))}
-      <View style={styles.field}>
-        <Text style={styles.label}>Comentários (opcional)</Text>
-        <TextInput
-          value={comentarios}
-          onChangeText={setComentarios}
-          multiline
-          style={[styles.input, { height: 100 }]}
-        />
-      </View>
-      <Button title="Salvar Avaliação" onPress={handleSubmit} />
+
+      <Card style={styles.card} elevation={2}>
+        <Card.Content>
+          <Paragraph style={styles.criterionLabel}>
+            Comentários (opcional)
+          </Paragraph>
+          <TextInput
+            mode="outlined"
+            value={comentarios}
+            onChangeText={setComentarios}
+            multiline
+            numberOfLines={4}
+            style={styles.textArea}
+          />
+        </Card.Content>
+      </Card>
+
+      <PaperButton
+        mode="contained"
+        onPress={handleSubmit}
+        contentStyle={styles.submitButton}
+        style={styles.submitWrapper}
+      >
+        Salvar Avaliação
+      </PaperButton>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 20, fontWeight: "bold", marginBottom: 16 },
-  field: { marginBottom: 12 },
-  label: { marginBottom: 4 },
-  buttonsRow: { flexDirection: "row", flexWrap: "wrap" },
-  input: { borderWidth: 1, borderColor: "#ccc", padding: 8, borderRadius: 4 },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  container: { padding: 16, paddingBottom: 32, backgroundColor: "#fff" },
+  header: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  card: { marginBottom: 16, borderRadius: 8 },
+  criterionLabel: { fontSize: 16, marginBottom: 8, fontWeight: "600" },
+  buttonsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  noteButton: { marginBottom: 8 },
+  noteButtonSelected: { backgroundColor: "#007AFF" },
+  noteLabel: { color: "#007AFF" },
+  noteLabelSelected: { color: "#fff" },
+  textArea: { backgroundColor: "#f5f5f5", minHeight: 100 },
+  submitWrapper: { marginTop: 24 },
+  submitButton: { paddingVertical: 8 },
 });

@@ -18,6 +18,10 @@ export type DrawerParamList = {
   Evaluated: undefined;
   Profile: undefined;
 };
+export type ProfileStackParamList = {
+  Profile: undefined;
+  ResetPassword: undefined;
+};
 const Drawer = createDrawerNavigator<DrawerParamList>();
 
 // Rotas compartilhadas pelas stacks internas
@@ -32,7 +36,7 @@ export type EvaluatorStackParamList = {
 // Criação das três stacks
 const HomeStack = createNativeStackNavigator<EvaluatorStackParamList>();
 const EvaluatedStack = createNativeStackNavigator<EvaluatorStackParamList>();
-const ProfileStack = createNativeStackNavigator<EvaluatorStackParamList>();
+const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 
 function HomeStackNavigator() {
   return (
@@ -91,11 +95,7 @@ function ProfileStackNavigator() {
     <ProfileStack.Navigator
       initialRouteName="Profile"
       screenOptions={{
-        headerRight: () => (
-          <View style={{ marginRight: 8 }}>
-            <LogoutButton />
-          </View>
-        ),
+        headerRight: () => <LogoutButton />,
       }}
     >
       <ProfileStack.Screen

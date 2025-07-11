@@ -1,14 +1,15 @@
 // src/screens/evaluator/EvaluationsListScreen.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
-  FlatList,
-  Text,
-  Button,
-  ActivityIndicator,
   StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
 } from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { Card, Paragraph, Title, Button, Text } from "react-native-paper";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../contexts/AuthContext";
 import { firestore } from "../../services/firebase";
@@ -23,95 +24,116 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { EvaluatorStackParamList } from "../../navigation/EvaluatorDrawer";
 
-interface EvalItem {
+type EvalItem = {
   evaluationId: string;
   trabalhoId: string;
   titulo: string;
   total: number;
-}
-
-type Props = {
-  navigation: NativeStackNavigationProp<
-    EvaluatorStackParamList,
-    "EvaluatedList"
-  >;
 };
 
-export default function EvaluationsListScreen({ navigation }: Props) {
+type NavProp = NativeStackNavigationProp<
+  EvaluatorStackParamList,
+  "EvaluatedList"
+>;
+
+export default function EvaluationsListScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation<NavProp>();
   const [items, setItems] = useState<EvalItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        // 1) get all avaliações deste avaliador
-        const snap = await getDocs(
-          query(
-            collection(firestore, "avaliacoes"),
-            where("avaliadorId", "==", user!.uid)
-          )
+  const loadEvaluations = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const snap = await getDocs(
+        query(
+          collection(firestore, "avaliacoes"),
+          where("avaliadorId", "==", user.uid)
+        )
+      );
+      const list: EvalItem[] = [];
+      for (const d of snap.docs) {
+        const data = d.data();
+        const total = Object.values<number>(data.notas || {}).reduce(
+          (a, b) => a + b,
+          0
         );
-
-        const list: EvalItem[] = [];
-        for (const d of snap.docs) {
-          const data = d.data();
-          // compute total = sum of data.notas
-          const total = Object.values<number>(data.notas || {}).reduce(
-            (a, b) => a + b,
-            0
-          );
-          // fetch project title
-          const projSnap = await getDoc(
-            doc(firestore, "trabalhos", data.trabalhoId)
-          );
-          const titulo = projSnap.exists()
-            ? (projSnap.data() as any).titulo
-            : "";
-
-          list.push({
-            evaluationId: d.id,
-            trabalhoId: data.trabalhoId,
-            titulo,
-            total,
-          });
-        }
-        setItems(list);
-      } catch (error: any) {
-        Toast.show({
-          type: "error",
-          text1: "Erro ao carregar avaliações",
-          text2: error.message,
+        const projSnap = await getDoc(
+          doc(firestore, "trabalhos", data.trabalhoId)
+        );
+        const titulo = projSnap.exists()
+          ? (projSnap.data() as any).titulo
+          : "—";
+        list.push({
+          evaluationId: d.id,
+          trabalhoId: data.trabalhoId,
+          titulo,
+          total,
         });
-      } finally {
-        setLoading(false);
       }
-    })();
+      setItems(list);
+    } catch (err: any) {
+      Toast.show({
+        type: "error",
+        text1: "Erro ao carregar avaliações",
+        text2: err.message,
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
+  // reload on focus
+  useFocusEffect(
+    useCallback(() => {
+      loadEvaluations();
+    }, [loadEvaluations])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadEvaluations();
+    setRefreshing(false);
+  }, [loadEvaluations]);
+
   if (loading) {
-    return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
   }
+
   if (items.length === 0) {
     return (
       <View style={styles.centered}>
-        <Text>Você ainda não avaliou nenhum trabalho.</Text>
+        <Text>Nenhuma avaliação realizada ainda.</Text>
+        <Button onPress={loadEvaluations} style={styles.retryButton}>
+          Recarregar
+        </Button>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={items}
-        keyExtractor={(i) => i.evaluationId}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>{item.titulo}</Text>
-            <Text>Total Atribuído: {item.total.toFixed(2)}</Text>
+    <FlatList
+      style={styles.list}
+      data={items}
+      keyExtractor={(item) => item.evaluationId}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      renderItem={({ item }) => (
+        <Card style={styles.card} mode="elevated">
+          <Card.Content>
+            <Title numberOfLines={1}>{item.titulo}</Title>
+            <Paragraph>Nota Total: {item.total.toFixed(2)}</Paragraph>
+          </Card.Content>
+          <Card.Actions>
             <Button
-              title="Editar Avaliação"
+              mode="contained"
               onPress={() =>
                 navigation.navigate("Evaluate", {
                   trabalhoId: item.trabalhoId,
@@ -119,23 +141,33 @@ export default function EvaluationsListScreen({ navigation }: Props) {
                   evaluationId: item.evaluationId,
                 })
               }
-            />
-          </View>
-        )}
-      />
-    </View>
+            >
+              Editar
+            </Button>
+          </Card.Actions>
+        </Card>
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  list: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#fff",
+  },
   card: {
     marginBottom: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 6,
+    borderRadius: 8,
   },
-  title: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  retryButton: {
+    marginTop: 12,
+  },
 });

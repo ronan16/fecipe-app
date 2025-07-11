@@ -7,16 +7,23 @@ import {
   Button,
   ActivityIndicator,
   StyleSheet,
-  Platform,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
 import Toast from "react-native-toast-message";
 import Papa from "papaparse";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, writeBatch, doc } from "firebase/firestore";
 
-// Interface para tipagem das linhas do CSV
+// Categorias permitidas (mesma lista usada no formulário)
+const VALID_CATEGORIES = [
+  "Ensino",
+  "Pesquisa/Inovação",
+  "Extensão",
+  "IFTECH",
+  "Robótica",
+  "Comunicação Oral",
+];
+
 interface TrabalhoRow {
   titulo: string;
   alunos: string;
@@ -29,153 +36,152 @@ interface TrabalhoRow {
 export default function BulkUploadScreen() {
   const [loading, setLoading] = useState(false);
 
+  // Carrega títulos já existentes
+  const loadExistingTitles = async (): Promise<Set<string>> => {
+    const snap = await getDocs(collection(firestore, "trabalhos"));
+    const titles = new Set<string>();
+    snap.docs.forEach((d) => {
+      const t = d.data().titulo;
+      if (typeof t === "string") titles.add(t.trim().toLowerCase());
+    });
+    return titles;
+  };
+
+  // Lê e parseia CSV via PapaParse
+  const parseCsv = async (uri: string): Promise<TrabalhoRow[]> => {
+    const resp = await fetch(uri);
+    const text = await resp.text();
+    const result = Papa.parse<TrabalhoRow>(text, {
+      header: true,
+      skipEmptyLines: true,
+    });
+    if (result.errors.length) {
+      throw new Error(result.errors[0].message);
+    }
+    return result.data;
+  };
+
+  // Valida uma linha
+  const validateRow = (
+    row: TrabalhoRow,
+    existing: Set<string>
+  ): { valid: boolean; reason?: "duplicate" | "category" | "incomplete" } => {
+    const t = row.titulo?.trim();
+    const a = row.alunos?.trim();
+    if (!t || !a) return { valid: false, reason: "incomplete" };
+    if (existing.has(t.toLowerCase()))
+      return { valid: false, reason: "duplicate" };
+    if (!VALID_CATEGORIES.includes(row.categoria || "")) {
+      return { valid: false, reason: "category" };
+    }
+    return { valid: true };
+  };
+
   const handlePickFile = async () => {
-    console.log("🔍 handlePickFile: start");
     try {
-      // 1) Abre o picker sem restrição de MIME
-      const res = await DocumentPicker.getDocumentAsync({
+      setLoading(true);
+
+      // 1) Seleciona arquivo
+      const result = await DocumentPicker.getDocumentAsync({
         type: ["*/*"],
         copyToCacheDirectory: true,
       });
-      console.log("🔍 picker result:", res);
-
-      // 2) Cancelamento
-      if ("canceled" in res && res.canceled) {
-        console.log("🔍 picker canceled");
+      // 2) Se cancelou, sai
+      if ((result as any).canceled) {
+        setLoading(false);
         return;
       }
 
-      // 3) Extrai uri e name (web e mobile)
-      const file: any = (res as any).assets?.[0] ?? res;
-      const uri: string | undefined = file.uri;
-      const name: string | undefined = file.name;
-      console.log("🔍 uri:", uri, "name:", name);
+      // 3) Extrai uri e name via any, cobrindo web e mobile
+      const anyRes = result as any;
+      let uri: string | undefined = anyRes.uri;
+      let name: string | undefined = anyRes.name;
+      if (!uri && Array.isArray(anyRes.assets) && anyRes.assets.length > 0) {
+        uri = anyRes.assets[0].uri;
+        name = anyRes.assets[0].name;
+      }
 
-      if (!uri || !name) {
+      // 4) Valida uri/name e extensão
+      if (!uri || !name || !name.toLowerCase().endsWith(".csv")) {
         Toast.show({
           type: "error",
-          text1: "Arquivo inválido",
-          text2: "URI ou nome ausente",
+          text1: "Selecione um arquivo CSV válido",
+          text2: name ?? "nenhum arquivo",
         });
+        setLoading(false);
         return;
       }
 
-      // 4) Valida extensão CSV
-      const lc = name.toLowerCase();
-      if (!lc.endsWith(".csv")) {
-        Toast.show({
-          type: "error",
-          text1: "Apenas CSV suportado",
-          text2: name,
-        });
-        return;
-      }
+      // 5) Parse CSV
+      const rows = await parseCsv(uri);
 
-      setLoading(true);
+      // 6) Load existing titles
+      const existingTitles = await loadExistingTitles();
 
-      // 5) Leitura do conteúdo (web vs native)
-      let fileContent: string;
-      if (Platform.OS === "web") {
-        console.log("🔍 Web: fetch text");
-        fileContent = await fetch(uri).then((r) => r.text());
-      } else {
-        console.log("🔍 Native: read UTF8");
-        fileContent = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
-      }
-
-      // 6) Parse CSV
-      const result = Papa.parse<TrabalhoRow>(fileContent, {
-        header: true,
-        skipEmptyLines: true,
-      });
-
-      if (result.errors.length > 0) {
-        console.error("❌ CSV parse errors:", result.errors);
-        Toast.show({
-          type: "error",
-          text1: "Erro no CSV",
-          text2: result.errors[0].message,
-        });
-        return;
-      }
-
-      const rows = result.data;
-      console.log("🔍 Rows:", rows.length);
-
-      // 7) Carrega títulos existentes
-      const existingSnap = await getDocs(collection(firestore, "trabalhos"));
-      const existingTitles = new Set<string>();
-      existingSnap.docs.forEach((d) => {
-        const data = d.data();
-        if (typeof data.titulo === "string") {
-          existingTitles.add(data.titulo.trim().toLowerCase());
-        }
-      });
-
-      // 8) Prepara batch com validação de unicidade
-      let imported = 0;
-      let skipped = 0;
+      // 7) Prepara batch e contadores
       const batch = writeBatch(firestore);
+      let inserted = 0,
+        dupes = 0,
+        invalidCat = 0,
+        incomplete = 0;
 
-      rows.forEach((row, idx) => {
-        const tituloRaw = row.titulo?.trim();
-        const alunosRaw = row.alunos?.trim();
-        if (!tituloRaw || !alunosRaw) {
-          console.warn(`⚠️ Linha ${idx + 1} incompleta `, row);
+      // 8) Itera e valida cada linha
+      rows.forEach((row) => {
+        const check = validateRow(row, existingTitles);
+        if (!check.valid) {
+          if (check.reason === "duplicate") dupes++;
+          else if (check.reason === "category") invalidCat++;
+          else if (check.reason === "incomplete") incomplete++;
           return;
         }
-        const lower = tituloRaw.toLowerCase();
-        if (existingTitles.has(lower)) {
-          skipped++;
-          return;
-        }
-        existingTitles.add(lower);
-
-        const alunosArr = alunosRaw
+        // adiciona ao batch
+        const alunosArr = row.alunos
           .split(";")
           .map((s) => s.trim())
           .filter(Boolean);
-
         const ref = doc(collection(firestore, "trabalhos"));
         batch.set(ref, {
-          titulo: tituloRaw,
+          titulo: row.titulo.trim(),
           alunos: alunosArr,
           orientador: row.orientador,
           turma: row.turma,
           anoSemestre: row.anoSemestre,
           categoria: row.categoria,
         });
-
-        imported++;
+        existingTitles.add(row.titulo.trim().toLowerCase());
+        inserted++;
       });
 
-      if (imported > 0) {
-        await batch.commit();
-      }
+      // 9) Commit se necessário
+      if (inserted > 0) await batch.commit();
 
+      // 10) Exibe toast de resumo
+      const parts: string[] = [];
+      if (inserted) parts.push(`${inserted} inserido(s)`);
+      if (dupes) parts.push(`${dupes} duplicado(s)`);
+      if (invalidCat) parts.push(`${invalidCat} categoria(s) inválida(s)`);
+      if (incomplete) parts.push(`${incomplete} incompleto(s)`);
       Toast.show({
-        type: "success",
+        type: inserted > 0 ? "success" : "error",
         text1: "Importação concluída",
-        text2: ` ${imported} importados, ${skipped} ignorados `,
+        text2: parts.join(" • ") || "Nenhum registro válido",
+        visibilityTime: 5000,
       });
-    } catch (error: any) {
-      console.error("❌ Import error:", error);
+    } catch (err: any) {
+      console.error("BulkUpload error:", err);
       Toast.show({
         type: "error",
         text1: "Erro ao importar",
-        text2: error.message,
+        text2: err.message,
       });
     } finally {
       setLoading(false);
-      console.log("🔍 handlePickFile: end");
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Importar Projetos em Lote (CSV)</Text>
+      <Text style={styles.title}>📥 Importar Projetos em Lote (CSV)</Text>
       <Button
         title="Selecionar Arquivo CSV"
         onPress={handlePickFile}
@@ -187,6 +193,11 @@ export default function BulkUploadScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, justifyContent: "center" },
-  title: { fontSize: 18, marginBottom: 12, textAlign: "center" },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  title: { fontSize: 18, fontWeight: "bold", marginBottom: 12 },
 });
