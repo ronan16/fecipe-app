@@ -1,30 +1,32 @@
+// src/screens/admin/EvaluatorForm.tsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
-  Alert,
-  ScrollView,
   StyleSheet,
-  Text,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   ActivityIndicator,
 } from "react-native";
-import Input from "../../components/Input";
-import SubmitButton from "../../components/SubmitButton";
+import {
+  Card,
+  TextInput,
+  Button,
+  Title,
+  HelperText,
+  useTheme,
+} from "react-native-paper";
+import Toast from "react-native-toast-message";
 import { auth, firestore } from "../../services/firebase";
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import {
-  setDoc,
-  updateDoc,
-  doc,
-  DocumentData,
-  getDoc,
-} from "firebase/firestore";
+import { setDoc, updateDoc, doc, getDoc } from "firebase/firestore";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AdminParamList, Evaluator } from "../../navigation/AdminStack";
-import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AdminParamList, "EvaluatorForm">;
 
@@ -34,48 +36,40 @@ interface FormState {
   password: string;
 }
 
-const initialState: FormState = {
-  name: "",
-  email: "",
-  password: "",
-};
+const initialState: FormState = { name: "", email: "", password: "" };
 
 export default function EvaluatorForm({ route, navigation }: Props) {
+  const theme = useTheme();
   const evaluator = route.params?.evaluator as Evaluator | undefined;
+
   const [data, setData] = useState<FormState>(initialState);
   const [errors, setErrors] = useState<Partial<FormState>>({});
   const [loading, setLoading] = useState(false);
 
-  // Limpa erros ao focar
-  useFocusEffect(
-    useCallback(() => {
-      setErrors({});
-    }, [])
-  );
+  // Limpa erros quando entra
+  useFocusEffect(useCallback(() => setErrors({}), []));
 
-  // Se estiver editando, carrega dados do Firestore
+  // Carrega dados no modo edição
   useEffect(() => {
     if (evaluator) {
       (async () => {
         const snap = await getDoc(doc(firestore, "users", evaluator.id));
-        const userData = snap.data() as DocumentData;
-        setData({
-          name: userData.name || "",
-          email: evaluator.id,
-          password: "",
-        });
+        if (snap.exists()) {
+          const usr = snap.data() as any;
+          setData({ name: usr.name || "", email: evaluator.id, password: "" });
+        }
       })();
     }
   }, [evaluator]);
 
   const validate = () => {
     const errs: Partial<FormState> = {};
-    if (!data.name.trim()) errs.name = "Nome obrigatório";
-    if (!data.email.trim()) errs.email = "Email obrigatório";
+    if (!data.name.trim()) errs.name = "Nome é obrigatório";
+    if (!data.email.trim()) errs.email = "Email é obrigatório";
     if (!evaluator && !data.password.trim())
-      errs.password = "Senha obrigatória";
+      errs.password = "Senha é obrigatória";
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    return !Object.keys(errs).length;
   };
 
   const handleSave = async () => {
@@ -84,39 +78,35 @@ export default function EvaluatorForm({ route, navigation }: Props) {
 
     try {
       if (evaluator) {
-        // Atualização de nome
+        // Atualiza apenas o nome
         await updateDoc(doc(firestore, "users", evaluator.id), {
           name: data.name.trim(),
         });
-        // Se quiser enviar link de reset de senha
+        // Se senha preenchida, envia link
         if (data.password.trim()) {
-          await sendPasswordResetEmail(auth, data.email);
-
-          // depois de salvar a avaliação
-          Toast.show({
-            type: "success",
-            text1: "Senha",
-            text2:
-              "Link de redefinição de senha enviado ao email do avaliador.",
-          });
+          await sendPasswordResetEmail(auth, data.email.trim());
+          Toast.show({ type: "success", text1: "Link de senha enviado" });
+        } else {
+          Toast.show({ type: "success", text1: "Avaliador atualizado" });
         }
       } else {
-        // Criação de usuário e doc no Firestore
+        // Cria credencial no Auth e no Firestore
         const cred = await createUserWithEmailAndPassword(
           auth,
-          data.email,
-          data.password
+          data.email.trim(),
+          data.password.trim()
         );
         await setDoc(doc(firestore, "users", cred.user.email!), {
           name: data.name.trim(),
           role: "evaluator",
         });
+        Toast.show({ type: "success", text1: "Avaliador criado" });
       }
       navigation.goBack();
     } catch (err: any) {
       Toast.show({
         type: "error",
-        text1: "Erro",
+        text1: "Erro ao salvar",
         text2: err.message,
       });
     } finally {
@@ -125,42 +115,87 @@ export default function EvaluatorForm({ route, navigation }: Props) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Input
-        label="Nome"
-        value={data.name}
-        onChangeText={(v) => setData((d) => ({ ...d, name: v }))}
-        error={errors.name}
-      />
-      <Input
-        label="Email"
-        value={data.email}
-        editable={!evaluator}
-        onChangeText={(v) => setData((d) => ({ ...d, email: v }))}
-        error={errors.email}
-      />
-      {!evaluator && (
-        <Input
-          label="Senha"
-          value={data.password}
-          secureTextEntry
-          onChangeText={(v) => setData((d) => ({ ...d, password: v }))}
-          error={errors.password}
-        />
-      )}
-      {loading ? (
-        <ActivityIndicator size="large" style={styles.loader} />
-      ) : (
-        <SubmitButton
-          title={evaluator ? "Atualizar Avaliador" : "Criar Avaliador"}
-          onPress={handleSave}
-        />
-      )}
-    </ScrollView>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#fff" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView contentContainerStyle={styles.container}>
+        <Title style={styles.header}>
+          {evaluator ? "Editar Avaliador" : "Novo Avaliador"}
+        </Title>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <TextInput
+              label="Nome"
+              value={data.name}
+              onChangeText={(v) => setData((d) => ({ ...d, name: v }))}
+              mode="outlined"
+              error={!!errors.name}
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!!errors.name}>
+              {errors.name}
+            </HelperText>
+
+            <TextInput
+              label="Email"
+              value={data.email}
+              onChangeText={(v) => setData((d) => ({ ...d, email: v }))}
+              mode="outlined"
+              keyboardType="email-address"
+              editable={!evaluator}
+              error={!!errors.email}
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!!errors.email}>
+              {errors.email}
+            </HelperText>
+
+            {!evaluator && (
+              <>
+                <TextInput
+                  label="Senha"
+                  value={data.password}
+                  onChangeText={(v) => setData((d) => ({ ...d, password: v }))}
+                  mode="outlined"
+                  secureTextEntry
+                  error={!!errors.password}
+                  style={styles.field}
+                />
+                <HelperText type="error" visible={!!errors.password}>
+                  {errors.password}
+                </HelperText>
+              </>
+            )}
+          </Card.Content>
+        </Card>
+
+        {loading ? (
+          <ActivityIndicator
+            style={{ marginTop: 20 }}
+            color={theme.colors.primary}
+          />
+        ) : (
+          <Button
+            mode="contained"
+            onPress={handleSave}
+            style={styles.saveButton}
+            contentStyle={styles.saveContent}
+          >
+            {evaluator ? "Atualizar" : "Criar"}
+          </Button>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
-  loader: { marginTop: 24 },
+  header: { textAlign: "center", marginBottom: 16 },
+  card: { borderRadius: 8, marginBottom: 16 },
+  field: { marginBottom: 8, backgroundColor: "#fff" },
+  saveButton: { borderRadius: 24 },
+  saveContent: { paddingVertical: 6 },
 });

@@ -1,130 +1,111 @@
 // src/screens/admin/ProjectForm.tsx
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
-  Alert,
-  ScrollView,
   StyleSheet,
-  Text,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Picker } from "@react-native-picker/picker";
-import Input from "../../components/Input";
-import SubmitButton from "../../components/SubmitButton";
-import { firestore } from "../../services/firebase";
 import {
-  addDoc,
-  updateDoc,
-  doc,
-  collection,
-  DocumentData,
-} from "firebase/firestore";
-import { useFocusEffect } from "@react-navigation/native";
+  Card,
+  TextInput,
+  Button,
+  Title,
+  HelperText,
+  Divider,
+  useTheme,
+  Paragraph,
+} from "react-native-paper";
+import Toast from "react-native-toast-message";
+import { Picker } from "@react-native-picker/picker";
+import { firestore } from "../../services/firebase";
+import { addDoc, updateDoc, doc, collection } from "firebase/firestore";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AdminParamList } from "../../navigation/AdminStack";
-import Toast from "react-native-toast-message";
 
 type Props = NativeStackScreenProps<AdminParamList, "ProjectForm">;
 
-// Estado do formulário
-interface FormState {
-  titulo: string;
-  alunos: string; // ';'-separated
-  orientador: string;
-  turma: string;
-  anoSemestre: string;
-  categoria: string;
-}
+const CATEGORIES = [
+  "Ensino",
+  "Pesquisa/Inovação",
+  "Extensão",
+  "Comunicação Oral",
+  "IFTECH",
+  "Robótica",
+];
 
-const initialState: FormState = {
-  titulo: "",
-  alunos: "",
-  orientador: "",
-  turma: "",
-  anoSemestre: "",
-  categoria: "",
-};
+export default function ProjectForm({ route, navigation }: Props) {
+  const theme = useTheme();
+  const project = route.params?.project as any | undefined;
 
-export default function ProjectForm({ navigation, route }: Props) {
-  // Se vier via params, tem dados de edição
-  const project = route.params?.project as
-    | (FormState & { id: string; alunos: string[] })
-    | undefined;
+  const [titulo, setTitulo] = useState("");
+  const [alunos, setAlunos] = useState("");
+  const [orientador, setOrientador] = useState("");
+  const [turma, setTurma] = useState("");
+  const [anoSem, setAnoSem] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const [data, setData] = useState<FormState>(initialState);
-  const [errors, setErrors] = useState<
-    Partial<Record<keyof FormState, string>>
-  >({});
-  const [loading, setLoading] = useState<boolean>(false);
-
-  // Quando o form ganha foco, limpamos erros
-  useFocusEffect(
-    useCallback(() => {
-      setErrors({});
-    }, [])
-  );
-
-  // Se estivermos editando, preenchemos o estado
   useEffect(() => {
     if (project) {
-      setData({
-        titulo: project.titulo,
-        alunos: project.alunos.join("; "),
-        orientador: project.orientador,
-        turma: project.turma,
-        anoSemestre: project.anoSemestre,
-        categoria: project.categoria,
-      });
+      setTitulo(project.titulo);
+      setAlunos(project.alunos.join("; "));
+      setOrientador(project.orientador);
+      setTurma(project.turma);
+      setAnoSem(project.anoSemestre);
+      setCategoria(project.categoria);
     }
   }, [project]);
 
-  // Validação simples de campos obrigatórios
-  const validate = (): boolean => {
-    const errs: Partial<Record<keyof FormState, string>> = {};
-    if (!data.titulo.trim()) errs.titulo = "Título obrigatório";
-    if (!data.alunos.trim()) errs.alunos = "Informe ao menos um aluno";
-    if (!data.orientador.trim()) errs.orientador = "Orientador obrigatório";
-    if (!data.turma.trim()) errs.turma = "Turma obrigatória";
-    if (!data.anoSemestre.trim()) errs.anoSemestre = "Ano/Semestre obrigatório";
-    if (!data.categoria) errs.categoria = "Categoria obrigatória";
-
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+  const validate = () => {
+    if (
+      !titulo.trim() ||
+      !alunos.trim() ||
+      !orientador.trim() ||
+      !turma.trim() ||
+      !anoSem.trim() ||
+      !categoria
+    ) {
+      Toast.show({
+        type: "error",
+        text1: "Preencha todos os campos obrigatórios",
+      });
+      return false;
+    }
+    return true;
   };
 
-  // Envio do formulário
-  const handleSave = async () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
     setLoading(true);
 
-    // Prepara o payload
     const payload = {
-      titulo: data.titulo.trim(),
-      alunos: data.alunos
+      titulo: titulo.trim(),
+      alunos: alunos
         .split(";")
         .map((s) => s.trim())
         .filter((s) => s),
-      orientador: data.orientador.trim(),
-      turma: data.turma.trim(),
-      anoSemestre: data.anoSemestre.trim(),
-      categoria: data.categoria,
+      orientador: orientador.trim(),
+      turma: turma.trim(),
+      anoSemestre: anoSem.trim(),
+      categoria,
     };
 
     try {
       if (project) {
-        // Atualiza
-        const ref = doc(firestore, "trabalhos", project.id);
-        await updateDoc(ref, payload);
+        await updateDoc(doc(firestore, "trabalhos", project.id), payload);
       } else {
-        // Novo
         await addDoc(collection(firestore, "trabalhos"), payload);
       }
+      Toast.show({ type: "success", text1: "Projeto salvo com sucesso" });
       navigation.goBack();
     } catch (err: any) {
       Toast.show({
         type: "error",
-        text1: "Erro ao salvar projeto",
+        text1: "Erro ao salvar",
         text2: err.message,
       });
     } finally {
@@ -133,96 +114,130 @@ export default function ProjectForm({ navigation, route }: Props) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Input
-        label="Título"
-        value={data.titulo}
-        onChangeText={(text) => setData((d) => ({ ...d, titulo: text }))}
-        error={errors.titulo}
-      />
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#fff" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView contentContainerStyle={styles.container}>
+        <Title style={styles.header}>
+          {project ? "Editar Projeto" : "Novo Projeto"}
+        </Title>
 
-      <Input
-        label="Alunos (separados por ;)"
-        value={data.alunos}
-        onChangeText={(text) => setData((d) => ({ ...d, alunos: text }))}
-        error={errors.alunos}
-      />
+        <Card style={styles.card}>
+          <Card.Content>
+            <TextInput
+              label="Título"
+              value={titulo}
+              onChangeText={setTitulo}
+              mode="outlined"
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!titulo.trim()}>
+              Obrigatório
+            </HelperText>
 
-      <Input
-        label="Orientador"
-        value={data.orientador}
-        onChangeText={(text) => setData((d) => ({ ...d, orientador: text }))}
-        error={errors.orientador}
-      />
+            <TextInput
+              label="Alunos (separados por `;`)"
+              value={alunos}
+              onChangeText={setAlunos}
+              mode="outlined"
+              multiline
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!alunos.trim()}>
+              Obrigatório
+            </HelperText>
 
-      <Input
-        label="Turma"
-        value={data.turma}
-        onChangeText={(text) => setData((d) => ({ ...d, turma: text }))}
-        error={errors.turma}
-      />
+            <TextInput
+              label="Orientador"
+              value={orientador}
+              onChangeText={setOrientador}
+              mode="outlined"
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!orientador.trim()}>
+              Obrigatório
+            </HelperText>
 
-      <Input
-        label="Ano/Semestre"
-        value={data.anoSemestre}
-        onChangeText={(text) => setData((d) => ({ ...d, anoSemestre: text }))}
-        error={errors.anoSemestre}
-      />
+            <Divider style={styles.divider} />
 
-      <View style={styles.pickerContainer}>
-        <Text style={styles.pickerLabel}>Categoria</Text>
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={data.categoria}
-            onValueChange={(val) => setData((d) => ({ ...d, categoria: val }))}
+            <TextInput
+              label="Turma"
+              value={turma}
+              onChangeText={setTurma}
+              mode="outlined"
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!turma.trim()}>
+              Obrigatório
+            </HelperText>
+
+            <TextInput
+              label="Ano/Semestre"
+              value={anoSem}
+              onChangeText={setAnoSem}
+              mode="outlined"
+              style={styles.field}
+            />
+            <HelperText type="error" visible={!anoSem.trim()}>
+              Obrigatório
+            </HelperText>
+
+            <Divider style={styles.divider} />
+
+            <Paragraph style={styles.label}>Categoria</Paragraph>
+            <View style={styles.pickerWrapper}>
+              <Picker
+                selectedValue={categoria}
+                onValueChange={setCategoria}
+                style={styles.picker}
+              >
+                <Picker.Item label="Selecione..." value="" />
+                {CATEGORIES.map((c) => (
+                  <Picker.Item key={c} label={c} value={c} />
+                ))}
+              </Picker>
+            </View>
+            <HelperText type="error" visible={!categoria}>
+              Obrigatório
+            </HelperText>
+          </Card.Content>
+        </Card>
+
+        {loading ? (
+          <ActivityIndicator
+            style={{ marginTop: 24 }}
+            color={theme.colors.primary}
+          />
+        ) : (
+          <Button
+            mode="contained"
+            onPress={handleSubmit}
+            style={styles.submit}
+            contentStyle={styles.submitContent}
           >
-            <Picker.Item label="Selecione..." value="" />
-            <Picker.Item label="Ensino" value="Ensino" />
-            <Picker.Item label="Pesquisa/Inovação" value="Pesquisa/Inovação" />
-            <Picker.Item label="Extensão" value="Extensão" />
-            <Picker.Item label="Comunicação Oral" value="Comunicação Oral" />
-            <Picker.Item label="IFTECH" value="IFTECH" />
-            <Picker.Item label="Robótica" value="Robótica" />
-          </Picker>
-        </View>
-        {errors.categoria ? (
-          <Text style={styles.errorText}>{errors.categoria}</Text>
-        ) : null}
-      </View>
-
-      {loading ? (
-        <ActivityIndicator size="large" style={styles.loader} />
-      ) : (
-        <SubmitButton
-          title={project ? "Atualizar Projeto" : "Salvar Projeto"}
-          onPress={handleSave}
-        />
-      )}
-    </ScrollView>
+            Salvar
+          </Button>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-  },
-  pickerContainer: {
-    marginVertical: 12,
-  },
-  pickerLabel: {
-    marginBottom: 4,
-    fontSize: 16,
-  },
+  container: { padding: 16 },
+  header: { marginBottom: 16, textAlign: "center" },
+  card: { borderRadius: 8, padding: 8, marginBottom: 16 },
+  field: { marginBottom: 8 },
+  divider: { marginVertical: 8 },
+  label: { marginTop: 8, marginBottom: 4, fontSize: 14, fontWeight: "500" },
   pickerWrapper: {
     borderWidth: 1,
     borderColor: "#ccc",
     borderRadius: 4,
+    overflow: "hidden",
   },
-  errorText: {
-    color: "red",
-    marginTop: 4,
-  },
-  loader: {
-    marginTop: 24,
-  },
+  picker: { width: "100%" },
+  submit: { marginTop: 8, borderRadius: 24 },
+  submitContent: { paddingVertical: 6 },
 });

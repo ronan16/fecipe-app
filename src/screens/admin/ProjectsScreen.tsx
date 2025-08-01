@@ -1,17 +1,28 @@
-import React, { useEffect, useState, useCallback } from "react";
+// src/screens/admin/ProjectsScreen.tsx
+
+import React, { useState, useCallback } from "react";
 import {
   View,
-  FlatList,
-  Text,
-  Button,
-  ActivityIndicator,
   StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import Toast from "react-native-toast-message";
+import {
+  Card,
+  Title,
+  Paragraph,
+  TextInput,
+  Button,
+  FAB,
+  Chip,
+  useTheme,
+} from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Toast from "react-native-toast-message";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { ProjectsStackParamList } from "../../navigation/AdminDrawer";
 
 type Props = {
@@ -29,14 +40,23 @@ interface Project {
 }
 
 export default function ProjectsScreen({ navigation }: Props) {
+  const theme = useTheme();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
       const snap = await getDocs(collection(firestore, "trabalhos"));
-      setProjects(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setProjects(list);
+
+      const cats = Array.from(new Set(list.map((p) => p.categoria)));
+      setCategories(cats);
     } catch (error: any) {
       Toast.show({
         type: "error",
@@ -50,11 +70,15 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // chama sua função async, mas o callback em si é síncrono
       loadProjects();
-      // não retorna Promise nem cleanup
     }, [loadProjects])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadProjects();
+    setRefreshing(false);
+  }, [loadProjects]);
 
   const handleDelete = async (id: string) => {
     setLoading(true);
@@ -73,73 +97,114 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   };
 
-  if (loading) {
+  const filtered = projects
+    .filter((p) => p.titulo.toLowerCase().includes(search.trim().toLowerCase()))
+    .filter((p) => (filterCat ? p.categoria === filterCat : true));
+
+  if (loading && !refreshing) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Linha com botões de ação */}
-      <View style={styles.buttonRow}>
-        <Button
-          title="Novo Projeto"
-          onPress={() => navigation.navigate("ProjectForm", {})}
-        />
-        <Button
-          title="Importar em Lote"
-          onPress={() => navigation.navigate("BulkUpload", undefined)}
-        />
+      <TextInput
+        placeholder="Buscar por título..."
+        value={search}
+        onChangeText={setSearch}
+        style={styles.search}
+        mode="outlined"
+        left={<TextInput.Icon icon="magnify" />}
+      />
+
+      <View style={styles.chips}>
+        <Chip
+          selected={!filterCat}
+          onPress={() => setFilterCat(null)}
+          style={styles.chip}
+        >
+          Todos
+        </Chip>
+        {categories.map((cat) => (
+          <Chip
+            key={cat}
+            selected={filterCat === cat}
+            onPress={() => setFilterCat(cat)}
+            style={styles.chip}
+          >
+            {cat}
+          </Chip>
+        ))}
       </View>
 
       <FlatList
-        data={projects}
+        data={filtered}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        contentContainerStyle={filtered.length === 0 && styles.emptyContainer}
         renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>{item.titulo}</Text>
-            <View style={styles.actions}>
+          <Card style={styles.card} mode="elevated">
+            <Card.Content>
+              <Title numberOfLines={1}>{item.titulo}</Title>
+              <Paragraph numberOfLines={1}>
+                {item.categoria} • {item.turma}
+              </Paragraph>
+            </Card.Content>
+            <Card.Actions>
               <Button
-                title="Editar"
                 onPress={() =>
                   navigation.navigate("ProjectForm", { project: item })
                 }
-              />
-              <View style={styles.actionSpacing} />
+              >
+                Editar
+              </Button>
               <Button
-                title="Excluir"
-                color="red"
                 onPress={() => handleDelete(item.id)}
-              />
-            </View>
-          </View>
+                textColor={theme.colors.error}
+              >
+                Excluir
+              </Button>
+            </Card.Actions>
+          </Card>
         )}
+      />
+
+      <FAB
+        style={styles.fab}
+        icon="plus"
+        onPress={() => navigation.navigate("ProjectForm", {})}
+      />
+      <FAB
+        style={[styles.fab, { bottom: 90 }]}
+        small
+        icon="download"
+        onPress={() => navigation.navigate("BulkUpload")}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  buttonRow: {
+  container: { flex: 1, backgroundColor: "#fff" },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  search: { margin: 16 },
+  chips: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
+    flexWrap: "wrap",
+    marginHorizontal: 16,
+    marginBottom: 8,
   },
-  list: { paddingBottom: 16 },
-  card: {
-    marginBottom: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 6,
+  chip: { marginRight: 8, marginBottom: 8 },
+  card: { marginHorizontal: 16, marginVertical: 8, borderRadius: 8 },
+  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  fab: {
+    position: "absolute",
+    right: 16,
+    bottom: 16,
   },
-  title: { fontSize: 16, marginBottom: 8 },
-  actions: { flexDirection: "row" },
-  actionSpacing: { width: 12 },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
 });

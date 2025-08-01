@@ -3,19 +3,26 @@
 import React, { useState, useCallback } from "react";
 import {
   View,
-  FlatList,
-  Text,
-  Button,
-  ActivityIndicator,
-  Alert,
   StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
 } from "react-native";
+import {
+  Card,
+  Title,
+  Paragraph,
+  Button,
+  FAB,
+  Avatar,
+  useTheme,
+} from "react-native-paper";
+import Toast from "react-native-toast-message";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { firestore } from "../../services/firebase";
 import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
 import type { AdminParamList } from "../../navigation/AdminStack";
-import Toast from "react-native-toast-message";
 
 type Props = {
   navigation: NativeStackNavigationProp<AdminParamList, "Evaluators">;
@@ -23,25 +30,26 @@ type Props = {
 
 interface Evaluator {
   id: string;
-  name?: string;
+  name: string;
   role: string;
 }
 
 export default function EvaluatorsScreen({ navigation }: Props) {
+  const theme = useTheme();
   const [evals, setEvals] = useState<Evaluator[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadEvals = useCallback(async () => {
     setLoading(true);
     try {
       const snap = await getDocs(collection(firestore, "users"));
       const list: Evaluator[] = snap.docs.map((d) => {
-        const data = d.data() as { name?: string; role?: string };
+        const data = d.data() as any;
         return {
           id: d.id,
-          name: data.name,
-          // assume role always present in Firestore; use non-null assertion
-          role: data.role!,
+          name: data.name || "(sem nome)",
+          role: data.role || "evaluator",
         };
       });
       setEvals(list);
@@ -62,127 +70,102 @@ export default function EvaluatorsScreen({ navigation }: Props) {
     }, [loadEvals])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadEvals();
+    setRefreshing(false);
+  }, [loadEvals]);
+
   const handleDelete = (id: string) => {
-    Alert.alert(
-      "Excluir avaliador?",
-      "Tem certeza que deseja remover este avaliador?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Excluir",
-          style: "destructive",
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await deleteDoc(doc(firestore, "users", id));
-              await loadEvals();
-              Toast.show({
-                type: "success",
-                text1: "Sucesso",
-                text2: "Avaliador excluído com sucesso",
-              });
-            } catch (error: any) {
-              Toast.show({
-                type: "error",
-                text1: "Erro ao excluir avaliador",
-                text2: error.message,
-              });
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    Toast.show({
+      type: "info",
+      text1: "Excluindo avaliador...",
+      text2: "Por favor, aguarde.",
+    });
+    setLoading(true);
+    deleteDoc(doc(firestore, "users", id))
+      .then(() => {
+        Toast.show({ type: "success", text1: "Avaliador excluído" });
+        return loadEvals();
+      })
+      .catch((err) => {
+        Toast.show({
+          type: "error",
+          text1: "Falha ao excluir",
+          text2: err.message,
+        });
+      })
+      .finally(() => setLoading(false));
   };
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.buttonRow}>
-        <Button
-          title="Novo Avaliador"
-          onPress={() => navigation.navigate("EvaluatorForm", {})}
-          disabled={loading}
-        />
-      </View>
+      <FlatList
+        data={evals}
+        keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        contentContainerStyle={evals.length === 0 && styles.centered}
+        ListEmptyComponent={
+          <Paragraph style={styles.emptyText}>
+            Nenhum avaliador encontrado.
+          </Paragraph>
+        }
+        renderItem={({ item }) => (
+          <Card style={styles.card} mode="outlined">
+            <Card.Title
+              title={item.name}
+              subtitle={item.role === "admin" ? "Administrador" : "Avaliador"}
+              left={(props) => (
+                <Avatar.Text {...props} label={item.name.charAt(0)} />
+              )}
+            />
+            <Card.Actions>
+              <Button
+                onPress={() =>
+                  navigation.navigate("EvaluatorForm", { evaluator: item })
+                }
+              >
+                Editar
+              </Button>
+              <Button
+                textColor={theme.colors.error}
+                onPress={() => handleDelete(item.id)}
+              >
+                Excluir
+              </Button>
+            </Card.Actions>
+          </Card>
+        )}
+      />
 
-      {evals.length === 0 ? (
-        <View style={styles.centered}>
-          <Text>Nenhum avaliador encontrado.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={evals}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.title}>
-                {item.name ?? item.id} ({item.role})
-              </Text>
-              <View style={styles.actions}>
-                <Button
-                  title="Editar"
-                  onPress={() =>
-                    navigation.navigate("EvaluatorForm", { evaluator: item })
-                  }
-                  disabled={loading}
-                />
-                <View style={styles.actionSpacing} />
-                <Button
-                  title="Excluir"
-                  color="red"
-                  onPress={() => handleDelete(item.id)}
-                  disabled={loading}
-                />
-              </View>
-            </View>
-          )}
-        />
-      )}
+      <FAB
+        icon="plus"
+        label="Novo"
+        style={styles.fab}
+        onPress={() => navigation.navigate("EvaluatorForm", {})}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  buttonRow: {
-    marginBottom: 12,
-  },
-  list: {
-    paddingBottom: 16,
-  },
-  card: {
-    marginBottom: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 6,
-  },
-  title: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  actions: {
-    flexDirection: "row",
-  },
-  actionSpacing: {
-    width: 12,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  container: { flex: 1, backgroundColor: "#fff" },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { marginTop: 20, textAlign: "center" },
+  card: { margin: 8, borderRadius: 8 },
+  fab: {
+    position: "absolute",
+    right: 16,
+    bottom: 16,
   },
 });
